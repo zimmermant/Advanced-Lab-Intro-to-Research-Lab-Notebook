@@ -1,0 +1,16 @@
+Fitter Status : Successful - Wed Apr 30 15:56:16 2008
+Quartus II Version : 7.2 Build 203 02/05/2008 SP 2 SJ Web Edition
+Revision Name : RS232coincidencecounter
+Top-level Entity Name : RS232coincidencecounter
+Family : Cyclone II
+Device : EP2C35F672C6
+Timing Models : Final
+Total logic elements : 740 / 33,216 ( 2 % )
+    Total combinational functions : 580 / 33,216 ( 2 % )
+    Dedicated logic registers : 579 / 33,216 ( 2 % )
+Total registers : 579
+Total pins : 151 / 475 ( 32 % )
+Total virtual pins : 0
+Total memory bits : 3,072 / 483,840 ( < 1 % )
+Embedded Multiplier 9-bit elements : 0 / 70 ( 0 % )
+Total PLLs : 0 / 4 ( 0 % )

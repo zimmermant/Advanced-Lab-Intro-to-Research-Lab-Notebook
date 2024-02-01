@@ -1,0 +1,14 @@
+Analysis & Synthesis Status : Successful - Fri Apr 25 15:50:28 2008
+Quartus II Version : 7.2 Build 203 02/05/2008 SP 2 SJ Web Edition
+Revision Name : RS232coincidencecounter
+Top-level Entity Name : RS232coincidencecounter
+Family : Cyclone II
+Total logic elements : 580
+    Total combinational functions : 580
+    Dedicated logic registers : 579
+Total registers : 579
+Total pins : 151
+Total virtual pins : 0
+Total memory bits : 3,072
+Embedded Multiplier 9-bit elements : 0
+Total PLLs : 0

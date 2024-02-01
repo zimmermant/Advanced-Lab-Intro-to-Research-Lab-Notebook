@@ -1,0 +1,282 @@
+\documentclass{article}
+\usepackage{microtype}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[ascii]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+\usepackage{minted}
+\usepackage{hyperref}
+\usepackage{amsmath, amssymb}
+\usepackage{mathtools}
+\usepackage{siunitx}
+\usepackage{titling}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{fancyvrb}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily,
+  columns=flexible,
+}
+\renewcommand{\thefootnote}{[\arabic{footnote}]}
+
+\title{Python interfaces and tools for the Lynn lab electronic
+  equipment}
+
+\author{Kye W. Shi \\
+  Nick Koskelo \\
+  Lorenzo Calvano \\\\
+  \textsc{Lynn Lab}}
+
+\date{Summer 2018}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  There is a piece of software that is allegedly quite popular among
+  scientists, called \emph{LabVIEW}.  Scientists use LabVIEW to do
+  measurements with their sensors or something.  However, there are
+  some big problems with LabVIEW.
+  \begin{itemize}
+  \item The LabVIEW programming ``language'' (being graphical and all)
+    is quite unlike mainstream languages such as Python, Java, C/C++,
+    and so on.  As such, LabVIEW is harder to work with.  A typical
+    Harvey Mudd student embarking on their career in the Lynn Lab almost
+    certainly has worked with Python prior (having endured Core) but
+    quite probably has not heard of LabVIEW.
+
+  \item LabVIEW is a proprietary piece of software that costs a crap ton
+    of money.  As such, it is practically impossible for students to
+    obtain LabVIEW on their own personal computers and consequently much
+    harder for students, unfamiliar with LabVIEW, to attempt to learn
+    LabVIEW on their own time, in their own rooms, on their own
+    computers.
+
+  \item LabVIEW has not done a spectacular job at keeping their
+    versions cross-compatible (e.g. software designed in LabVIEW 2011
+    fails to start in LabVIEW 2009).  This version incompatibility
+    prevents us from collecting data and controlling motors from the
+    same computer (the two lab computers run different LabVIEW
+    versions) and consequently prevents us from fully automating the
+    data collection process (which would require motor movements
+    interlaced with coincidence sampling).  Furthermore,
+    proprietary-ness and software license red tape make this issue
+    harder to fix than simply upgrading the LabVIEW version to match.
+\end{itemize}
+These barriers to working with LabVIEW render it a cumbersome and
+rather inconvenient tool.  It is especially intimidating to newcomers
+to the lab, like me.  As such, we've reimplemented some of the LabVIEW
+measurement tools in Python, in an effort to make the software easier
+to understand, alter, and maintain, and (on a larger scale) to
+facilitate in ultimately automating the data collection process.
+
+Details on the usage and functioning of these tools are documented in
+this write-up, so the reader (i.e. \emph{you}) won't have to spend
+hours scouring the internets for manuals and whatnot, as we did.
+Enjoy.
+\end{abstract}
+
+\tableofcontents
+
+\section*{Prelude and some notes}
+
+Prior to our arrival in the Lynn lab, measurements were done using two
+computers.
+
+A newer computer (named \emph{lynnlab}, maybe), running Windows 7, was
+used to measure coincidences from an older time-to-amplitude converter
+(TAC) setup.  It supposedly has better time resolution, but it is more
+complicated to configure and \emph{much} bulkier.  As such, we don't
+use it.  The \emph{lynnlab} computer is also used to control motorized
+optical table mounts (e.g. rotating plate holders and whatnot) from
+Thorlabs and Newport.
+
+An older computer (named \emph{MEHTA}), running Windows XP, was used
+to measure coincidences using the \hyperref[sec:ccu]{FPGA CCU}.  It
+contained (and ran) the LabVIEW VIs that interfaced with the CCU.  It
+also lacked an internet connection, so we plugged in a cheap USB WiFi
+module from AliExpress as a temporary fix\footnote{By the end of the
+  summer, I will have taken the WiFi stick back home with me, and so
+  \emph{MEHTA} will be once again without internet.}.
+
+In order to integrate automatic motor movement and data collection, we
+would have to move both motor and coincidence-counter interfaces to
+one computer.  
+
+\section{Coincidence-counting unit}
+\label{sec:ccu}
+
+Photon coincidence counting is done using an \emph{Altera
+  DE2}\footnote{The website also has a section on a CCU implemented
+  with the \emph{DE2-115} board.  Ours is \emph{not} that, I think.}
+field-programmable gate array (FPGA), designed by some folks at
+Whitman college or something.  They have a website with some
+information on the FPGA coincidence counter
+\href{http://people.whitman.edu/~beckmk/QM/circuit/circuit.html}{here}:
+\url{http://people.whitman.edu/~beckmk/QM/circuit/circuit.html}.
+
+The CCU designers provide some reference LabVIEW ``instruments''
+(\emph{VI}s) to interface with their CCU.  In addition, there was a VI
+already created on the Lynn lab computers for interfacing with the CCU
+before our arrival in the lab
+(\verb|RCH_HMC_coincidence_time_rs232.vi|).  We crawled through these
+sources code and gathered what we could from the attached user manual
+(written by the Whitman folks) to find what we could on connecting to
+and communicating with the CCU.
+
+The CCU counts photon incidences over 8 channels, denoted
+\lstinline|C0| through \lstinline|C7|.  Channels \lstinline|C0|
+through \lstinline|C3| correspond to single-incidence counts
+(i.e. photon incidences on a single detector), while channels
+\lstinline|C4| through \lstinline|C7| corresponds to coincidence
+counts (i.e. two photons striking two detectors
+``simultaneously''\footnote{within a narrow time interval of each
+  other.  This time interval (termed the \emph{time resolution}) is,
+  for our configurations, about \SI{7}{\ns}, I think.}).
+Single-incidence channels \lstinline|C0|, \lstinline|C1|,
+\lstinline|C2|, and \lstinline|C3| are labeled, perhaps for
+readability's sake, as \lstinline|A|, \lstinline|B|, \lstinline|A'|,
+and \lstinline|B'|, respectively.  Coincidence channels are
+configured, using little toggle switches on the FPGA board, to track
+and count coincidences among various pairs of single-incidence
+channels, to different time resolutions.  More details on these
+respective configurations and resolutions can be found in the Whitman
+CCU manual.
+
+% include graphics of main panel
+
+% include graphics of source code
+
+\subsection{Serial connection parameters}
+
+The CCU communicates with the computer over the RS-232 serial
+protocol.  Details on the protocol are not particularly important.
+Basically, under this protocol, the computer connects to the device
+over a particular \emph{serial port} (loosely corresponds to the
+computer's hardware port attached to the device).  Then, the data is
+transferred, one bit at a time, at a particular \emph{baud rate}
+(i.e. the number of bits sent per second).
+
+The serial port varies depending on what computer the device is
+connected to and what hardware slot the cable is plugged in to.  In
+our case, we found the port to be \lstinline|COM1| when the CCU was
+plugged into the native RS-232 port and \lstinline|COM4| when the CCU
+was plugged into the USB port via an RS-232--to--USB converter cable.
+The \emph{Windows Device Manager} should provide some useful clues
+regarding which serial port to use.
+
+The baud rate is specific to the design and implementation of the
+serial device (i.e. it is chosen by the device, or the designers of
+the device).  In our case, we found from the provided VI source (and
+confirmed by crude experimentation) the baud rate to be
+\lstinline|19200| bits per second.
+
+\subsection{Serial data protocol and format}
+
+The fundamental ``unit'' of data is a \emph{byte}, or a contiguous
+chunk of 8 bits.  Each byte contains the binary representation of some
+value between \(0\) (\lstinline|0b00000000|\footnote{The
+  \lstinline|0b| notation denotes that a particular sequence of digits
+  encodes the \emph{binary} (i.e. base-2) representation of an
+  integer.  For example, binary \lstinline|0b1101| corresponds to the
+  integer \(\mathtt{1101}_2 = 2^3 + 2^2 + 2 = 13\).}) and
+\(2^8-1 = 255\) (\lstinline|0b11111111|).  As such, data sent from any
+serial device is generally grouped into and interpreted as sequences
+of bytes\footnote{Data is, on a \emph{physical} level, sent one
+  \emph{bit} at a time, but it is \emph{read}, or \emph{interpreted},
+  one \emph{byte} at a time.}.
+
+Our CCU transmits photon-counting data in \emph{packets} of 41 bytes.
+Each packet of 41 bytes is ``partitioned'' into 8 chunks---one for
+each counter channel---of 5 bytes each, with the last byte reserved
+for a termination byte (\lstinline|0xFF|\footnote{The \lstinline|0x|
+  prefix denotes a \emph{hexadecimal} (i.e. base-16) number
+  representation, with letters \lstinline|A| through \lstinline|F|
+  denoting digits for \(10\) through \(15\).  For example, hexadecimal
+  \lstinline|0xC0FFEE| corresponds to
+  \(\mathtt{C0FFEE}_{16} = 12 \cdot 16^5 + 0 \cdot 16^4 + 15 \cdot
+  16^3 + 15 \cdot 16^2 + 14 \cdot 16 + 14 = 12648430\).}, or
+\lstinline|0b11111111|) marking the end of the data packet.
+
+Each of the 8 5-byte chunks encode some sort of a multi-byte unsigned
+integer in little-endian form (i.e. least-significant byte first).  To
+avoid possible clashes with the termination byte, only the first 7
+bits of each byte are used, and the 8th bit in a data byte is always
+kept a \lstinline|0|\footnote{This observation has also been confirmed
+  by crude experimentation: in a relatively large sample of counter
+  values over a large-ish (i.e. effectively random) range of numbers,
+  the 8th bit consistently remained \lstinline|0|.}.  Thus, in total,
+there are up to 35 bits for storing each counter value\footnote{The
+  Whitman manual claims each counter to be encoded as a 32-bit number;
+  that sounds like the correct order of magnitude.}.  For example, the
+counter value \(4321\), with binary representation
+\lstinline|0b1000011100001|, would be sent, in order, as the byte
+sequence
+\begin{center}
+  \lstinline|01100001 00100001 00000000 00000000 00000000|.
+\end{center}
+The first byte contains the first (i.e. least significant) 7 bits,
+padded on the left by a prefix \lstinline|0| bit.  The next byte
+contains the next 7 bits, and so on.  Thus the byte-wise encoding of
+each counter value forms a base-128 representation\footnote{This claim
+  is backed by evidence in the Whitman LabVIEW code, where byte
+  sequences indeed appear to be interpreted in base-128.}, such that,
+if the 5 bytes were denoted \(b_0, b_1, b_2, b_3, b_4\), the counter
+value would be found as
+\[
+  b_0 \cdot 1 + b_1 \cdot 128 + b_2 \cdot 128^2 + b_3 \cdot 128^3 +
+  b_4 \cdot 128^4.
+\]
+
+For example, a data packet containing the counter values
+\[
+  \begin{array}{c|l}
+    \mathtt{C0} & 2718   \\
+    \mathtt{C1} & 281828 \\
+    \mathtt{C2} & 4      \\
+    \mathtt{C3} & 59045  \\
+    \mathtt{C4} & 235    \\
+    \mathtt{C5} & 360    \\
+    \mathtt{C6} & 2874   \\
+    \mathtt{C7} & 71352
+  \end{array}
+\]
+would be transmitted as the following sequence of bytes (with a header
+row added for clarity---columns containing ``delimiter''/prefix
+\lstinline|0| bits are labeled \lstinline|0|, and relevant data bit
+columns are labeled \lstinline|X|):
+\begin{center}
+  \ttfamily
+  \begin{tabular}{llllll}
+    0XXXXXXX & 0XXXXXXX & 0XXXXXXX & 0XXXXXXX & 0XXXXXXX \\ \cline{1-5}
+    00011110 & 00010101 & 00000000 & 00000000 & 00000000 \\
+    01100100 & 00011001 & 00010001 & 00000000 & 00000000 \\
+    00000100 & 00000000 & 00000000 & 00000000 & 00000000 \\
+    00100101 & 01001101 & 00000011 & 00000000 & 00000000 \\
+    01101011 & 00000001 & 00000000 & 00000000 & 00000000 \\
+    01101000 & 00000010 & 00000000 & 00000000 & 00000000 \\
+    00111010 & 00010110 & 00000000 & 00000000 & 00000000 \\
+    00111000 & 00101101 & 00000100 & 00000000 & 00000000 & 11111111
+  \end{tabular}
+\end{center}
+
+\subsection{Python tool set}
+
+\subsubsection{CCU controller library: \lstinline|fpga_ccu|}
+
+
+
+\subsubsection{Command-line monitoring utility: \lstinline|ccu.py|}
+
+
+\section{Motorized plate mounts}
+
+
+
+
+
+
+\end{document}
